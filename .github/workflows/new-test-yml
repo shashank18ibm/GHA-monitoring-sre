@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 # Schedule: run every hour at minute 0 (UTC time)
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
 
 jobs:
   # This workflow contains a single job called "build"
