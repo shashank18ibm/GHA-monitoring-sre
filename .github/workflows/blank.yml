@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
+    runs-on: [x86]
 
     steps:
       - uses: actions/checkout@v4
