@@ -1,22 +1,64 @@
-name: sre-monitoring-prod
-
+name: CI
+ 
 on:
-  push:
-    branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
+    branches:
+      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
-
-  # Run the workflow every 5 minutes (UTC time)
   schedule:
     - cron: '*/5 * * * *'
-
+ 
 jobs:
+ 
   build:
     runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
-
+    
     steps:
       - uses: actions/checkout@v4
-
       - name: Run a one-line script
-        run: echo Hello, world! GitHub app is running successfully.
+        run: echo "Hello, world! GitHub app is running successfully."
+ 
+        
+  code-quality:
+    name: Code quality
+    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run linting
+        run: |
+         if [ -x run_linting.sh ]; then
+         bash run_linting.sh
+         else
+          echo "Skipping linting: run_linting.sh not found or not executable"
+          fi
+ 
+  #tests:
+   # name: Tests - ${{ matrix.os }}
+    #needs:
+     # - code-quality
+   # runs-on: ${{ matrix.os }}
+   # strategy:
+   #   matrix:
+    #    os:
+     #     - ubuntu-latest
+      #    - macos-13
+       #   - windows-latest
+    #steps:
+     # - uses: actions/checkout@v4
+      #- name: Run tests
+       # run: bash run_tests.sh
+ 
+  notify:
+    name: Notify failed build
+    needs:
+      - code-quality
+     # - tests
+    if: failure() && github.event.pull_request == null
+    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
+    steps:
+      - uses: jayqi/failed-build-issue-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
