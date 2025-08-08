@@ -35,21 +35,21 @@ jobs:
           echo "Skipping linting: run_linting.sh not found or not executable"
           fi
  
-  #tests:
-   # name: Tests - ${{ matrix.os }}
-    #needs:
-     # - code-quality
-   # runs-on: ${{ matrix.os }}
-   # strategy:
-   #   matrix:
-    #    os:
-     #     - ubuntu-latest
-      #    - macos-13
-       #   - windows-latest
-    #steps:
-     # - uses: actions/checkout@v4
-      #- name: Run tests
-       # run: bash run_tests.sh
+  tests:
+    name: Tests - ${{ matrix.os }}
+    needs:
+      - code-quality
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-13
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: bash run_tests.sh
  
   notify:
     name: Notify failed build
