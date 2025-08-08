@@ -55,7 +55,7 @@ jobs:
     name: Notify failed build
     needs:
       - code-quality
-     # - tests
+      - tests
     if: failure() && github.event.pull_request == null
     runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
     steps:
