@@ -1,64 +1,100 @@
+ 
 name: CI
  
 on:
+
   pull_request:
-    branches:
-      - main
+
+    branches: [main]
+
   push:
-    branches:
-      - main
+
+    branches: [main]
+
   workflow_dispatch:
+
   schedule:
+
     - cron: '*/5 * * * *'
  
 jobs:
  
   build:
-    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
-    
+
+    strategy:
+
+      matrix:
+
+        runner: ["ubuntu-24.04-ppc64le", "ubuntu-24.04-ppc64le-p10"]
+
+      fail-fast: false  # optional — continue all runs even if one fails
+
+    runs-on: ${{ matrix.runner }}
+
     steps:
+
       - uses: actions/checkout@v4
+
       - name: Run a one-line script
-        run: echo "Hello, world! GitHub app is running successfully."
+
+        run: echo "Hello, world! GitHub app is running successfully on ${{ matrix.runner }}"
  
-        
   code-quality:
+
     name: Code quality
-    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
+
+    strategy:
+
+      matrix:
+
+        runner: ["ubuntu-24.04-ppc64le", "ubuntu-24.04-ppc64le-p10"]
+
+      fail-fast: false
+
+    runs-on: ${{ matrix.runner }}
+
     steps:
+
       - uses: actions/checkout@v4
+
       - name: Run linting
+
         run: |
-         if [ -x run_linting.sh ]; then
-         bash run_linting.sh
-         else
-          echo "Skipping linting: run_linting.sh not found or not executable"
+
+          if [ -x run_linting.sh ]; then
+
+            bash run_linting.sh
+
+          else
+
+            echo "Skipping linting: run_linting.sh not found or not executable"
+
           fi
  
-  #tests:
-    #name: Tests - ${{ matrix.os }}
-    #needs:
-     # - code-quality
-   # runs-on: ${{ matrix.os }}
-   # strategy:
-     # matrix:
-      #  os:
-      #    - ubuntu-latest
-       #   - macos-13
-       #   - windows-latest
-   # steps:
-   #   - uses: actions/checkout@v4
-     # - name: Run tests
-      #  run: bash run_tests.sh
- 
   notify:
+
     name: Notify failed build
-    needs:
-      - code-quality
-     # - tests
+
+    needs: [code-quality]
+
     if: failure() && github.event.pull_request == null
-    runs-on: [ubuntu-24.04-s390x, ubuntu-24.04-ppc64le]
+
+    strategy:
+
+      matrix:
+
+        runner: ["ubuntu-24.04-ppc64le", "ubuntu-24.04-ppc64le-p10"]
+
+      fail-fast: false
+
+    runs-on: ${{ matrix.runner }}
+
     steps:
+
       - uses: jayqi/failed-build-issue-action@v1
+
         with:
+
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+ 
