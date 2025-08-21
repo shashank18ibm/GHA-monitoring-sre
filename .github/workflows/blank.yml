@@ -38,25 +38,13 @@ jobs:
             echo "Skipping linting: run_linting.sh not found or not executable"
           fi
 
-  tests:
-    name: Run tests
-    strategy:
-      matrix:
-        runner: ["ubuntu-24.04-ppc64le", "ubuntu-24.04-ppc64le-p10"]
-      fail-fast: false
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run tests
-        run: |
-          echo "Running tests on ${{ matrix.runner }}"
-          # Add your test commands here
+ 
 
   notify:
     name: Notify failed build
     needs:
       - code-quality
-      - tests
+      - build
     if: failure() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
