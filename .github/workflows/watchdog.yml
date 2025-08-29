@@ -13,13 +13,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 👇 Change this to the exact name of your main workflow (file or name)
+          # 👇 Change this to the exact workflow file name
           MAIN_WORKFLOW="blank.yml"
 
           echo "🔍 Checking workflow: $MAIN_WORKFLOW"
 
           # Get last 5 runs of this workflow
-          runs=$(gh api repos/${{ github.repository }}/actions/workflows/${MAIN_WORKFLOW}.yml/runs \
+          runs=$(gh api repos/${{ github.repository }}/actions/workflows/${MAIN_WORKFLOW}/runs \
             --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id})')
 
           echo "Runs: $runs"
@@ -47,5 +47,5 @@ jobs:
           if [ "$alert" -eq 1 ]; then
             exit 1
           else
-            echo "ℹ️ Queued runs are recent (<30min)"
+            echo "✅ All queued runs are recent"
           fi
