@@ -2,7 +2,7 @@ name: Deployment Watchdog
 
 on:
   workflow_run:
-    workflows: blank.yml   # 👈 replace with the workflow name that does terraform apply
+    workflows: CI   # 👈 replace with the workflow name that does terraform apply
     types:
       - completed
 
