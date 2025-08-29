@@ -1,22 +1,51 @@
-name: Deployment Watchdog
+name: Deployment Watchdog (Scheduled)
 
 on:
-  workflow_run:
-    workflows: CI   # 👈 replace with the workflow name that does terraform apply
-    types:
-      - completed
+  schedule:
+    - cron: "*/5 * * * *"   # runs every 5 minutes
 
 jobs:
-  check-deploy:
+  watchdog:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if deploy failed
-        if: ${{ github.event.workflow_run.conclusion != 'success' }}
+      - name: Check recent workflow runs
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🚨 Deployment workflow failed!"
-          exit 1
+          # 👇 Change this to the exact name of your main workflow (file or name)
+          MAIN_WORKFLOW="CI"
 
-      - name: Report Success
-        if: ${{ github.event.workflow_run.conclusion == 'success' }}
-        run: |
-          echo "✅ Deployment succeeded!"
+          echo "🔍 Checking workflow: $MAIN_WORKFLOW"
+
+          # Get last 5 runs of this workflow
+          runs=$(gh api repos/${{ github.repository }}/actions/workflows/${MAIN_WORKFLOW}.yml/runs \
+            --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id})')
+
+          echo "Runs: $runs"
+
+          # Extract queued runs
+          queued=$(echo "$runs" | jq -c '.[] | select(.status=="queued")')
+          if [ -z "$queued" ]; then
+            echo "✅ No queued runs found"
+            exit 0
+          fi
+
+          # Check if any queued run is older than 30 minutes
+          now=$(date -u +%s)
+          alert=0
+          while IFS= read -r run; do
+            created=$(echo "$run" | jq -r .created_at)
+            ts=$(date -u -d "$created" +%s)
+            age=$(( (now - ts) / 60 ))
+            if [ "$age" -gt 30 ]; then
+              echo "🚨 Workflow stuck in queue for $age minutes! Run: $run"
+              alert=1
+            fi
+          done <<< "$queued"
+
+          if [ "$alert" -eq 1 ]; then
+            exit 1
+          else
+            echo "ℹ️ Queued runs are recent (<30min)"
+          fi
