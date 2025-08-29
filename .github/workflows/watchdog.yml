@@ -1,0 +1,22 @@
+name: Deployment Watchdog
+
+on:
+  workflow_run:
+    workflows: blank.yml   # 👈 replace with the workflow name that does terraform apply
+    types:
+      - completed
+
+jobs:
+  check-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if deploy failed
+        if: ${{ github.event.workflow_run.conclusion != 'success' }}
+        run: |
+          echo "🚨 Deployment workflow failed!"
+          exit 1
+
+      - name: Report Success
+        if: ${{ github.event.workflow_run.conclusion == 'success' }}
+        run: |
+          echo "✅ Deployment succeeded!"
