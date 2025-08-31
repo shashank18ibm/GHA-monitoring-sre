@@ -1,4 +1,4 @@
-name: Watchdog
+name: Watchdog_gha_prod_monitoring_orkflow_queued
 on:
   schedule:
     - cron: "*/5 * * * *"   # Run every 5 minutes
@@ -66,4 +66,4 @@ jobs:
           repository: ${{ github.repository }}
           title: ⚠️ Queued job stuck for more than 5 minutes
           content-filepath: issue.md
-          labels: bug, watchdog
+          labels:  watchdog
