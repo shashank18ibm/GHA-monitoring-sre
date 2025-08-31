@@ -1,32 +1,27 @@
-name: Deployment Watchdog (Scheduled)
+name: watchdog_gha_prod_workflow
 
 on:
+  workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"   # runs every 5 minutes
+    - cron: "*/5 * * * *" # runs every 5 minutes
 
 jobs:
-  watchdog:
+  monitor:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Install GitHub CLI
-        run: sudo apt-get install -y gh jq
-
-      - name: Check recent workflow runs
+      - name: Check queued workflows and raise issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          MAIN_WORKFLOW: "blank.yml" # change to your workflow filename
         run: |
-          MAIN_WORKFLOW="blank.yml"
-
-          echo "Checking monitoring workflow file: $MAIN_WORKFLOW"
+          echo "Checking workflow: $MAIN_WORKFLOW"
 
           # Get last 5 runs of this workflow
-          runs=$(gh api repos/${{ github.repository }}/actions/workflows/$MAIN_WORKFLOW/runs \
-            --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id})')
+          runs=$(gh api repos/$REPO/actions/workflows/${MAIN_WORKFLOW}/runs \
+            --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id, html_url: .html_url})')
 
-          echo "Recent runs: $runs"
+          echo "Runs: $runs"
 
           # Extract queued runs
           queued=$(echo "$runs" | jq -c '.[] | select(.status=="queued")')
@@ -35,22 +30,26 @@ jobs:
             exit 0
           fi
 
-          # Check if any queued run is older than 30 minutes
+          # Check if any queued run is older than 5 minutes
           now=$(date -u +%s)
-          alert=0
           while IFS= read -r run; do
             created=$(echo "$run" | jq -r .created_at)
+            url=$(echo "$run" | jq -r .html_url)
             ts=$(date -u -d "$created" +%s)
             age=$(( (now - ts) / 60 ))
-            if [ "$age" -gt 30 ]; then
-              echo "prod monitoring Workflow stuck in queue for $age minutes! Run details: $run"
-              alert=1
+
+            if [ "$age" -gt 5 ]; then
+              echo "Workflow stuck in queue for $age minutes! Run: $url"
+
+              # Check if issue already exists
+              existing=$(gh issue list --repo "$REPO" --state open --search "Workflow stuck in queue $url" --json number --jq '.[0].number')
+              if [ -z "$existing" ]; then
+                gh issue create \
+                  --repo "$REPO" \
+                  --title "⚠️prod monitoring Workflow stuck in queue for $age minutes" \
+                  --body "The workflow **$MAIN_WORKFLOW** has been queued for more than 5 minutes.\n\n- Run: $url\n- Created at: $created\n- Age: $age minutes"
+              else
+                echo "Issue #$existing already exists, skipping creation."
+              fi
             fi
           done <<< "$queued"
-
-          if [ "$alert" -eq 1 ]; then
-            echo "❌ One or more runs are stuck in queue."
-            exit 1
-          else
-            echo "✅ All queued runs are within allowed time."
-          fi
