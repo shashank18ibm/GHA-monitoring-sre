@@ -13,10 +13,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 👇 Change this to the exact workflow file name
           MAIN_WORKFLOW="blank.yml"
 
-          echo "🔍 Checking workflow: $MAIN_WORKFLOW"
+          echo "Checking workflow: $MAIN_WORKFLOW"
 
           # Get last 5 runs of this workflow
           runs=$(gh api repos/${{ github.repository }}/actions/workflows/${MAIN_WORKFLOW}/runs \
@@ -27,7 +26,7 @@ jobs:
           # Extract queued runs
           queued=$(echo "$runs" | jq -c '.[] | select(.status=="queued")')
           if [ -z "$queued" ]; then
-            echo "✅ No queued runs found"
+            echo "No queued runs found"
             exit 0
           fi
 
@@ -39,7 +38,7 @@ jobs:
             ts=$(date -u -d "$created" +%s)
             age=$(( (now - ts) / 60 ))
             if [ "$age" -gt 30 ]; then
-              echo "🚨 Workflow stuck in queue for $age minutes! Run: $run"
+              echo "Prod monitoring Workflow stuck in queue for $age minutes! Run: $run"
               alert=1
             fi
           done <<< "$queued"
@@ -47,5 +46,5 @@ jobs:
           if [ "$alert" -eq 1 ]; then
             exit 1
           else
-            echo "✅ All queued runs are recent"
+            echo "All queued runs are recent"
           fi
