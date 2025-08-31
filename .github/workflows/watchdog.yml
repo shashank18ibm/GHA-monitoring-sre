@@ -1,98 +1,65 @@
-name: Watchdog_gha_prod_monitoring_queued
+name: Watchdog_gha_prod_monitoring_wf_queued
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Run every 5 minutes
-  workflow_dispatch:        # Allow manual trigger
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch:
 
 jobs:
-  check-queued-jobs:
-    name: Check queued jobs
+  monitor-queued:
     runs-on: ubuntu-latest
-    outputs:
-      has-stale-jobs: ${{ steps.check.outputs.has-stale-jobs }}
-      issue-body: ${{ steps.check.outputs.issue-body }}
     steps:
-      - name: Check for queued jobs older than 5 minutes
+      - name: Check queued runs of blank.yml
         id: check
         run: |
-          echo "Fetching queued workflow runs..."
-          runs=$(gh api repos/${{ github.repository }}/actions/runs \
-            --jq '.workflow_runs[] | select(.status=="queued") | {id: .id, name: .name, created_at: .created_at}' \
-            --paginate)
-
-          stale_jobs=""
-          issue_body=""
-          cutoff=$(date -u -d "5 minutes ago" +%s)
-
-          while IFS= read -r run; do
-            id=$(echo "$run" | jq -r '.id')
-            name=$(echo "$run" | jq -r '.name')
-            created=$(echo "$run" | jq -r '.created_at')
-            created_ts=$(date -d "$created" +%s)
-
-            if [ "$created_ts" -lt "$cutoff" ]; then
-              stale_jobs="yes"
-              issue_body="$issue_body\n- Workflow **$name** (Run ID: $id) has been queued since $created"
+          echo "Checking queued runs for blank.yml"
+          # Get runs of blank.yml workflow
+          runs=$(gh api repos/${{ github.repository }}/actions/workflows/blank.yml/runs \
+            --jq '.workflow_runs[] | select(.status=="queued") | "\(.id) \(.run_number) \(.created_at)"')
+          
+          stale=""
+          now=$(date -u +%s)
+          for run in $runs; do
+            id=$(echo $run | awk '{print $1}')
+            num=$(echo $run | awk '{print $2}')
+            created=$(echo $run | awk '{print $3}')
+            created_sec=$(date -d "$created" +%s)
+            diff=$(( (now - created_sec) / 60 ))
+            if [ $diff -ge 5 ]; then
+              echo "Run $num (ID $id) has been queued for $diff minutes"
+              stale="$stale\n- Workflow blank.yml (Run ID: $id, Number: $num) queued since $created"
             fi
-          done <<< "$(echo "$runs" | jq -c '.')"
-
-          if [ -n "$stale_jobs" ]; then
-            echo "has-stale-jobs=true" >> $GITHUB_OUTPUT
-            echo "issue-body<<EOF" >> $GITHUB_OUTPUT
-            echo -e "$issue_body" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+          done
+          
+          echo -e "$stale" > issue.md
+          if [ -n "$stale" ]; then
+            echo "stale_found=true" >> $GITHUB_ENV
           else
-            echo "has-stale-jobs=false" >> $GITHUB_OUTPUT
+            echo "stale_found=false" >> $GITHUB_ENV
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  notify:
-    name: Create or Update Issue if stale jobs found
-    needs: check-queued-jobs
-    if: needs.check-queued-jobs.outputs.has-stale-jobs == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Write issue body to file
-        run: |
-          echo "⚠️ Queued job(s) stuck for more than 5 minutes:" > issue.md
-          echo "${{ needs.check-queued-jobs.outputs.issue-body }}" >> issue.md
-
-      - uses: peter-evans/create-issue-from-file@v5
+      - name: Create or update GitHub Issue if stale
+        if: env.stale_found == 'true'
+        uses: peter-evans/create-issue-from-file@v5
         with:
+          title: ⚠️ Queued job stuck > 5 minutes (blank.yml)
+          content-filepath: issue.md
+          labels: bug, watchdog
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          title: ⚠️ Queued job stuck for more than 5 minutes
-          content-filepath: issue.md
-          labels: watchdog
-          # ensures only one issue is open, updates if exists
-          update-existing: true
 
-  autoclose:
-    name: Auto-close Issue if no stale jobs
-    needs: check-queued-jobs
-    if: needs.check-queued-jobs.outputs.has-stale-jobs == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Find existing watchdog issue
-        id: find
+      - name: Close Issue if no stale jobs
+        if: env.stale_found == 'false'
         run: |
           issue_number=$(gh issue list \
             --repo ${{ github.repository }} \
-            --state open \
-            --label watchdog \
-            --json number \
-            --jq '.[0].number')
-          echo "issue_number=$issue_number" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Close issue if found
-        if: steps.find.outputs.issue_number != ''
-        run: |
-          gh issue close ${{ steps.find.outputs.issue_number }} \
-            --repo ${{ github.repository }} \
-            --comment "✅ All queued jobs have cleared. Auto-closing this issue."
+            --search "Queued job stuck > 5 minutes (blank.yml) in:title state:open" \
+            --json number --jq '.[0].number')
+          if [ -n "$issue_number" ]; then
+            gh issue close $issue_number --repo ${{ github.repository }} \
+              --comment "✅ All jobs are healthy. Closing watchdog alert."
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
