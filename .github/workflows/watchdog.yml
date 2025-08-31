@@ -1,55 +1,70 @@
-name: watchdog_gha_prod_workflow
+name: Watchdog
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *" # runs every 5 minutes
+    - cron: "*/5 * * * *"   # Run every 5 minutes
+  workflow_dispatch:        # Allow manual trigger
 
 jobs:
-  monitor:
+  check-queued-jobs:
+    name: Check queued jobs
+    runs-on: ubuntu-latest
+    outputs:
+      has-stale-jobs: ${{ steps.check.outputs.has-stale-jobs }}
+      issue-body: ${{ steps.check.outputs.issue-body }}
+    steps:
+      - name: Check for queued jobs older than 5 minutes
+        id: check
+        run: |
+          # Fetch workflow runs with status=queued
+          runs=$(gh api repos/${{ github.repository }}/actions/runs \
+            --jq '.workflow_runs[] | select(.status=="queued") | {id: .id, name: .name, created_at: .created_at}' \
+            --paginate)
+
+          echo "Found runs:"
+          echo "$runs"
+
+          stale_jobs=""
+          issue_body=""
+
+          cutoff=$(date -u -d "5 minutes ago" +%s)
+
+          while IFS= read -r run; do
+            id=$(echo "$run" | jq -r '.id')
+            name=$(echo "$run" | jq -r '.name')
+            created=$(echo "$run" | jq -r '.created_at')
+            created_ts=$(date -d "$created" +%s)
+
+            if [ "$created_ts" -lt "$cutoff" ]; then
+              stale_jobs="yes"
+              issue_body="$issue_body\n- Workflow **$name** (Run ID: $id) has been queued since $created"
+            fi
+          done <<< "$(echo "$runs" | jq -c '.')"
+
+          if [ -n "$stale_jobs" ]; then
+            echo "has-stale-jobs=true" >> $GITHUB_OUTPUT
+            echo "issue-body=$issue_body" >> $GITHUB_OUTPUT
+          else
+            echo "has-stale-jobs=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Create GitHub Issue if stale jobs found
+    needs: check-queued-jobs
+    if: needs.check-queued-jobs.outputs.has-stale-jobs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Check queued workflows and raise issue
+      - name: Create Issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "⚠️ Queued job stuck for more than 5 minutes"
+          content-file: issue.md
+          labels: bug, watchdog
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          MAIN_WORKFLOW: "blank.yml" # change to your workflow filename
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write issue body to file
         run: |
-          echo "Checking workflow: $MAIN_WORKFLOW"
-
-          # Get last 5 runs of this workflow
-          runs=$(gh api repos/$REPO/actions/workflows/${MAIN_WORKFLOW}/runs \
-            --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id, html_url: .html_url})')
-
-          echo "Runs: $runs"
-
-          # Extract queued runs
-          queued=$(echo "$runs" | jq -c '.[] | select(.status=="queued")')
-          if [ -z "$queued" ]; then
-            echo "No queued runs found"
-            exit 0
-          fi
-
-          # Check if any queued run is older than 5 minutes
-          now=$(date -u +%s)
-          while IFS= read -r run; do
-            created=$(echo "$run" | jq -r .created_at)
-            url=$(echo "$run" | jq -r .html_url)
-            ts=$(date -u -d "$created" +%s)
-            age=$(( (now - ts) / 60 ))
-
-            if [ "$age" -gt 5 ]; then
-              echo "Workflow stuck in queue for $age minutes! Run: $url"
-
-              # Check if issue already exists
-              existing=$(gh issue list --repo "$REPO" --state open --search "Workflow stuck in queue $url" --json number --jq '.[0].number')
-              if [ -z "$existing" ]; then
-                gh issue create \
-                  --repo "$REPO" \
-                  --title "⚠️prod monitoring Workflow stuck in queue for $age minutes" \
-                  --body "The workflow **$MAIN_WORKFLOW** has been queued for more than 5 minutes.\n\n- Run: $url\n- Created at: $created\n- Age: $age minutes"
-              else
-                echo "Issue #$existing already exists, skipping creation."
-              fi
-            fi
-          done <<< "$queued"
+          echo -e "${{ needs.check-queued-jobs.outputs.issue-body }}" > issue.md
