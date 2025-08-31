@@ -1,5 +1,4 @@
 name: Watchdog
-
 on:
   schedule:
     - cron: "*/5 * * * *"   # Run every 5 minutes
@@ -26,7 +25,6 @@ jobs:
 
           stale_jobs=""
           issue_body=""
-
           cutoff=$(date -u -d "5 minutes ago" +%s)
 
           while IFS= read -r run; do
@@ -34,7 +32,6 @@ jobs:
             name=$(echo "$run" | jq -r '.name')
             created=$(echo "$run" | jq -r '.created_at')
             created_ts=$(date -d "$created" +%s)
-
             if [ "$created_ts" -lt "$cutoff" ]; then
               stale_jobs="yes"
               issue_body="$issue_body\n- Workflow **$name** (Run ID: $id) has been queued since $created"
@@ -43,32 +40,30 @@ jobs:
 
           if [ -n "$stale_jobs" ]; then
             echo "has-stale-jobs=true" >> $GITHUB_OUTPUT
-            echo "issue-body=$issue_body" >> $GITHUB_OUTPUT
+            echo "issue-body<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$issue_body" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "has-stale-jobs=false" >> $GITHUB_OUTPUT
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    notify:
-    name: Notify failed build
-    needs:
-      - code-quality
-      - build
-    if: failure() && github.event_name != 'pull_request'
+  notify:
+    name: Create GitHub Issue if stale jobs found
+    needs: check-queued-jobs
+    if: needs.check-queued-jobs.outputs.has-stale-jobs == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare issue content
+      - name: Write issue body to file
         run: |
-          echo "⚠️ Workflow failed!" > issue.md
-          echo "- Workflow: ${{ github.workflow }}" >> issue.md
-          echo "- Run ID: ${{ github.run_id }}" >> issue.md
-          echo "- Job URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> issue.md
+          echo "⚠️ Queued job(s) stuck for more than 5 minutes:" > issue.md
+          echo "${{ needs.check-queued-jobs.outputs.issue-body }}" >> issue.md
 
       - uses: peter-evans/create-issue-from-file@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
           title: ⚠️ Queued job stuck for more than 5 minutes
-          content-filepath: issue.md   # <-- FIXED key
+          content-filepath: issue.md
           labels: bug, watchdog
