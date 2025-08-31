@@ -8,20 +8,25 @@ jobs:
   watchdog:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: sudo apt-get install -y gh jq
+
       - name: Check recent workflow runs
-        id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           MAIN_WORKFLOW="blank.yml"
 
-          echo "Checking workflow: $MAIN_WORKFLOW"
+          echo "Checking monitoring workflow file: $MAIN_WORKFLOW"
 
           # Get last 5 runs of this workflow
-          runs=$(gh api repos/${{ github.repository }}/actions/workflows/${MAIN_WORKFLOW}/runs \
+          runs=$(gh api repos/${{ github.repository }}/actions/workflows/$MAIN_WORKFLOW/runs \
             --jq '.workflow_runs[0:5] | map({status: .status, conclusion: .conclusion, created_at: .created_at, id: .id})')
 
-          echo "Runs: $runs"
+          echo "Recent runs: $runs"
 
           # Extract queued runs
           queued=$(echo "$runs" | jq -c '.[] | select(.status=="queued")')
@@ -38,13 +43,14 @@ jobs:
             ts=$(date -u -d "$created" +%s)
             age=$(( (now - ts) / 60 ))
             if [ "$age" -gt 30 ]; then
-              echo "Prod monitoring Workflow stuck in queue for $age minutes! Run: $run"
+              echo "prod monitoring Workflow stuck in queue for $age minutes! Run details: $run"
               alert=1
             fi
           done <<< "$queued"
 
           if [ "$alert" -eq 1 ]; then
+            echo "❌ One or more runs are stuck in queue."
             exit 1
           else
-            echo "All queued runs are recent"
+            echo "✅ All queued runs are within allowed time."
           fi
