@@ -1,4 +1,4 @@
-name: Watchdog_gha_prod_monitoring_orkflow_queued
+name: Watchdog_gha_prod_monitoring_queued
 on:
   schedule:
     - cron: "*/5 * * * *"   # Run every 5 minutes
