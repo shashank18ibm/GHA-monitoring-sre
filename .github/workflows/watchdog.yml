@@ -1,4 +1,4 @@
-name: Watchdog_gha_prod_monitoring_wf_queued
+name: Watchdog - Monitor gha-pord-worflow Status
 
 on:
   schedule:
@@ -6,51 +6,60 @@ on:
   workflow_dispatch:
 
 jobs:
-  monitor-queued:
+  monitor-blank:
     runs-on: ubuntu-latest
     steps:
       - name: Check queued runs of blank.yml
         id: check
         run: |
-          echo "Checking queued runs for blank.yml"
-          # Get runs of blank.yml workflow
+          echo "Checking queued runs for blank.yml..."
+          
+          # Get workflow runs for blank.yml with status=queued
           runs=$(gh api repos/${{ github.repository }}/actions/workflows/blank.yml/runs \
-            --jq '.workflow_runs[] | select(.status=="queued") | "\(.id) \(.run_number) \(.created_at)"')
+            --jq '.workflow_runs[] | select(.status=="queued") | {id: .id, run_number: .run_number, created_at: .created_at}' )
           
-          stale=""
-          now=$(date -u +%s)
-          for run in $runs; do
-            id=$(echo $run | awk '{print $1}')
-            num=$(echo $run | awk '{print $2}')
-            created=$(echo $run | awk '{print $3}')
-            created_sec=$(date -d "$created" +%s)
-            diff=$(( (now - created_sec) / 60 ))
-            if [ $diff -ge 5 ]; then
-              echo "Run $num (ID $id) has been queued for $diff minutes"
-              stale="$stale\n- Workflow blank.yml (Run ID: $id, Number: $num) queued since $created"
+          echo "Found runs:"
+          echo "$runs"
+
+          # Default: no stale jobs
+          echo "stale_found=false" >> $GITHUB_ENV
+
+          if [ -z "$runs" ]; then
+            echo "No queued runs found."
+            exit 0
+          fi
+
+          cutoff=$(date -u -d "5 minutes ago" +%s)
+          issue_body=""
+          while IFS= read -r run; do
+            id=$(echo "$run" | jq -r '.id')
+            num=$(echo "$run" | jq -r '.run_number')
+            created=$(echo "$run" | jq -r '.created_at')
+            created_ts=$(date -d "$created" +%s)
+            if [ "$created_ts" -lt "$cutoff" ]; then
+              issue_body="$issue_body\n- Workflow **blank.yml** (Run ID: $id, Number: $num) queued since $created"
             fi
-          done
-          
-          echo -e "$stale" > issue.md
-          if [ -n "$stale" ]; then
+          done <<< "$(echo "$runs" | jq -c '.')"
+
+          if [ -n "$issue_body" ]; then
+            echo "⚠️ Queued job(s) stuck for more than 5 minutes:" > issue.md
+            echo -e "$issue_body" >> issue.md
             echo "stale_found=true" >> $GITHUB_ENV
-          else
-            echo "stale_found=false" >> $GITHUB_ENV
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create or update GitHub Issue if stale
+      - name: Create Issue if stale jobs
         if: env.stale_found == 'true'
         uses: peter-evans/create-issue-from-file@v5
         with:
           title: ⚠️ Queued job stuck > 5 minutes (blank.yml)
           content-filepath: issue.md
-          labels: bug, watchdog
+          labels: watchdog
           token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
 
-      - name: Close Issue if no stale jobs
+      - name: Close Issue if queue is healthy
         if: env.stale_found == 'false'
         run: |
           issue_number=$(gh issue list \
@@ -59,7 +68,9 @@ jobs:
             --json number --jq '.[0].number')
           if [ -n "$issue_number" ]; then
             gh issue close $issue_number --repo ${{ github.repository }} \
-              --comment "✅ All jobs are healthy. Closing watchdog alert."
+              --comment "✅ All blank.yml runs are healthy. Closing watchdog alert."
+          else
+            echo "No open watchdog issue found."
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
