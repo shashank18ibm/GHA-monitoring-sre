@@ -1,4 +1,5 @@
 name: Watchdog_gha_prod_monitoring_queued
+
 on:
   schedule:
     - cron: "*/5 * * * *"   # Run every 5 minutes
@@ -15,13 +16,10 @@ jobs:
       - name: Check for queued jobs older than 5 minutes
         id: check
         run: |
-          # Fetch workflow runs with status=queued
+          echo "Fetching queued workflow runs..."
           runs=$(gh api repos/${{ github.repository }}/actions/runs \
             --jq '.workflow_runs[] | select(.status=="queued") | {id: .id, name: .name, created_at: .created_at}' \
             --paginate)
-
-          echo "Found runs:"
-          echo "$runs"
 
           stale_jobs=""
           issue_body=""
@@ -32,6 +30,7 @@ jobs:
             name=$(echo "$run" | jq -r '.name')
             created=$(echo "$run" | jq -r '.created_at')
             created_ts=$(date -d "$created" +%s)
+
             if [ "$created_ts" -lt "$cutoff" ]; then
               stale_jobs="yes"
               issue_body="$issue_body\n- Workflow **$name** (Run ID: $id) has been queued since $created"
@@ -50,7 +49,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
-    name: Create GitHub Issue if stale jobs found
+    name: Create or Update Issue if stale jobs found
     needs: check-queued-jobs
     if: needs.check-queued-jobs.outputs.has-stale-jobs == 'true'
     runs-on: ubuntu-latest
@@ -66,4 +65,34 @@ jobs:
           repository: ${{ github.repository }}
           title: ⚠️ Queued job stuck for more than 5 minutes
           content-filepath: issue.md
-          labels:  watchdog
+          labels: watchdog
+          # ensures only one issue is open, updates if exists
+          update-existing: true
+
+  autoclose:
+    name: Auto-close Issue if no stale jobs
+    needs: check-queued-jobs
+    if: needs.check-queued-jobs.outputs.has-stale-jobs == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find existing watchdog issue
+        id: find
+        run: |
+          issue_number=$(gh issue list \
+            --repo ${{ github.repository }} \
+            --state open \
+            --label watchdog \
+            --json number \
+            --jq '.[0].number')
+          echo "issue_number=$issue_number" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Close issue if found
+        if: steps.find.outputs.issue_number != ''
+        run: |
+          gh issue close ${{ steps.find.outputs.issue_number }} \
+            --repo ${{ github.repository }} \
+            --comment "✅ All queued jobs have cleared. Auto-closing this issue."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
