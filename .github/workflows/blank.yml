@@ -7,7 +7,7 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'  # Run every hour instead of every 5 minutes
+    - cron: '*/30 * * * *'  # Runs in every 30 minutes
 
 jobs:
   build:
