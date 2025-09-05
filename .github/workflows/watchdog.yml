@@ -1,4 +1,4 @@
-name: Watchdog - Monitor gha-pord-worflow Status
+name: Watchdog - Monitor gha-prod-workflow Status
 
 on:
   schedule:
@@ -13,11 +13,11 @@ jobs:
         id: check
         run: |
           echo "Checking queued runs for blank.yml..."
-          
+
           # Get workflow runs for blank.yml with status=queued
           runs=$(gh api repos/${{ github.repository }}/actions/workflows/blank.yml/runs \
             --jq '.workflow_runs[] | select(.status=="queued") | {id: .id, run_number: .run_number, created_at: .created_at}' )
-          
+
           echo "Found runs:"
           echo "$runs"
 
@@ -30,20 +30,21 @@ jobs:
           fi
 
           cutoff=$(date -u -d "5 minutes ago" +%s)
-          issue_body=""
+          stale_runs=""
+
           while IFS= read -r run; do
             id=$(echo "$run" | jq -r '.id')
             num=$(echo "$run" | jq -r '.run_number')
             created=$(echo "$run" | jq -r '.created_at')
             created_ts=$(date -d "$created" +%s)
+
             if [ "$created_ts" -lt "$cutoff" ]; then
-              issue_body="$issue_body\n- Workflow **blank.yml** (Run ID: $id, Number: $num) queued since $created"
+              stale_runs="$stale_runs$id,$num,$created"$'\n'
             fi
           done <<< "$(echo "$runs" | jq -c '.')"
 
-          if [ -n "$issue_body" ]; then
-            echo "⚠️ Queued job(s) stuck for more than 5 minutes:" > issue.md
-            echo -e "$issue_body" >> issue.md
+          if [ -n "$stale_runs" ]; then
+            echo "$stale_runs" > stale_runs.txt
             echo "stale_found=true" >> $GITHUB_ENV
           fi
         env:
@@ -51,26 +52,48 @@ jobs:
 
       - name: Create Issue if stale jobs
         if: env.stale_found == 'true'
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: ⚠️ Queued job stuck > 5 minutes (blank.yml)
-          content-filepath: issue.md
-          labels: watchdog
-          token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
+        run: |
+          while IFS=, read -r id num created; do
+            [ -z "$id" ] && continue
 
-      - name: Close Issue if queue is healthy
+            # Check if issue already exists for this Run ID
+            existing_issue=$(gh issue list \
+              --repo ${{ github.repository }} \
+              --search "Run ID: $id in:title state:open" \
+              --json number --jq '.[0].number')
+
+            if [ -z "$existing_issue" ]; then
+              echo "Creating new issue for Run ID: $id"
+              gh issue create \
+                --repo ${{ github.repository }} \
+                --title "⚠️ Queued job stuck > 5 minutes (blank.yml) - Run ID: $id" \
+                --body "Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck." \
+                --label watchdog
+            else
+              echo "Issue already exists for Run ID: $id (Issue #$existing_issue)"
+            fi
+          done < stale_runs.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Close Issues if queue is healthy
         if: env.stale_found == 'false'
         run: |
-          issue_number=$(gh issue list \
+          # Find all open watchdog issues for blank.yml
+          issues=$(gh issue list \
             --repo ${{ github.repository }} \
             --search "Queued job stuck > 5 minutes (blank.yml) in:title state:open" \
-            --json number --jq '.[0].number')
-          if [ -n "$issue_number" ]; then
-            gh issue close $issue_number --repo ${{ github.repository }} \
-              --comment "✅ All blank.yml runs are healthy. Closing watchdog alert."
-          else
-            echo "No open watchdog issue found."
+            --json number,title --jq '.[] | .number')
+
+          if [ -z "$issues" ]; then
+            echo "No open watchdog issues found."
+            exit 0
           fi
+
+          for issue_number in $issues; do
+            echo "Closing Issue #$issue_number"
+            gh issue close $issue_number --repo ${{ github.repository }} \
+              --comment "✅ Corresponding workflow run is no longer queued. Closing watchdog alert."
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
