@@ -29,7 +29,9 @@ jobs:
             exit 0
           fi
 
-          cutoff=$(date -u -d "5 minutes ago" +%s)
+          cutoff_yellow=$(date -u -d "10 minutes ago" +%s)
+          cutoff_red=$(date -u -d "30 minutes ago" +%s)
+          cutoff_severe=$(date -u -d "60 minutes ago" +%s)
           stale_runs=""
 
           while IFS= read -r run; do
@@ -38,8 +40,15 @@ jobs:
             created=$(echo "$run" | jq -r '.created_at')
             created_ts=$(date -d "$created" +%s)
 
-            if [ "$created_ts" -lt "$cutoff" ]; then
-              stale_runs="$stale_runs$id,$num,$created"$'\n'
+            if [ "$created_ts" -lt "$cutoff_severe" ]; then
+              severity="severe"
+              stale_runs="$stale_runs$id,$num,$created,$severity"$'\n'
+            elif [ "$created_ts" -lt "$cutoff_red" ]; then
+              severity="red"
+              stale_runs="$stale_runs$id,$num,$created,$severity"$'\n'
+            elif [ "$created_ts" -lt "$cutoff_yellow" ]; then
+              severity="yellow"
+              stale_runs="$stale_runs$id,$num,$created,$severity"$'\n'
             fi
           done <<< "$(echo "$runs" | jq -c '.')"
 
@@ -53,24 +62,38 @@ jobs:
       - name: Create Issue if stale jobs
         if: env.stale_found == 'true'
         run: |
-          while IFS=, read -r id num created; do
+          while IFS=, read -r id num created severity; do
             [ -z "$id" ] && continue
 
-            # Check if issue already exists for this Run ID
+            if [ "$severity" = "severe" ]; then
+              title="🔥🔥🔥🔥 Severe Red Alert: Queued job stuck > 60 minutes (blank.yml) - Run ID: $id"
+              body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>60 minutes)."
+              label="watchdog,severe-red-alert"
+            elif [ "$severity" = "red" ]; then
+              title="🛑🚨🚨Queued job stuck > 30 minutes (blank.yml) - Run ID: $id"
+              body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>30 minutes)."
+              label="watchdog,red-alert"
+            else
+              title="🟡⚠️ Queued job stuck > 10 minutes (blank.yml) - Run ID: $id"
+              body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>10 minutes)."
+              label="watchdog,yellow-alert"
+            fi
+
+            # Check if issue already exists for this Run ID + severity
             existing_issue=$(gh issue list \
               --repo ${{ github.repository }} \
-              --search "Run ID: $id in:title state:open" \
+              --search "$title in:title state:open" \
               --json number --jq '.[0].number')
 
             if [ -z "$existing_issue" ]; then
-              echo "Creating new issue for Run ID: $id"
+              echo "Creating new issue for Run ID: $id ($severity)"
               gh issue create \
                 --repo ${{ github.repository }} \
-                --title "⚠️ Queued job stuck > 5 minutes (blank.yml) - Run ID: $id" \
-                --body "Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck." \
-                --label watchdog
+                --title "$title" \
+                --body "$body" \
+                --label "$label"
             else
-              echo "Issue already exists for Run ID: $id (Issue #$existing_issue)"
+              echo "Issue already exists for Run ID: $id ($severity) -> #$existing_issue"
             fi
           done < stale_runs.txt
         env:
@@ -82,7 +105,7 @@ jobs:
           # Find all open watchdog issues for blank.yml
           issues=$(gh issue list \
             --repo ${{ github.repository }} \
-            --search "Queued job stuck > 5 minutes (blank.yml) in:title state:open" \
+            --search "Queued job stuck (blank.yml) in:title state:open" \
             --json number,title --jq '.[] | .number')
 
           if [ -z "$issues" ]; then
