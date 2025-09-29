@@ -25,7 +25,7 @@ jobs:
             exit 0
           fi
           cutoff_yellow=$(date -u -d "30 minutes ago" +%s)
-          cutoff_red=$(date -u -d "45 minutes ago" +%s)
+          cutoff_red=$(date -u -d "60 minutes ago" +%s)
           cutoff_severe=$(date -u -d "90 minutes ago" +%s)
           stale_runs=""
           while IFS= read -r run; do
@@ -62,8 +62,8 @@ jobs:
               body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>90 minutes).\n\n🔗 [View Run in GitHub Actions]($run_url)"
               label="watchdog,severe-red-alert"
             elif [ "$severity" = "red" ]; then
-              title="🚨🛑 Red Alert: Queued job stuck > 45 minutes (blank.yml) - Run ID: $id"
-              body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>45 minutes).\n\n🔗 [View Run in GitHub Actions]($run_url)"
+              title="🚨🛑 Red Alert: Queued job stuck > 60 minutes (blank.yml) - Run ID: $id"
+              body="Workflow **blank.yml** (Run Number: $num) has been queued since $created and is still stuck (>60 minutes).\n\n🔗 [View Run in GitHub Actions]($run_url)"
               label="watchdog,red-alert"
             else
               title="⚠️🟡 Yellow Alert: Queued job stuck > 30 minutes (blank.yml) - Run ID: $id"
