@@ -1,0 +1,26 @@
+name: Keep Repo Alive
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'   # every Monday at 00:00
+  workflow_dispatch:       # allows manual trigger
+
+jobs:
+  keep_alive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Update keep-alive file
+        run: |
+          echo "Keep alive timestamp: $(date)" >> .keepalive
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "chore: keep repo alive [skip ci]" || echo "No changes to commit"
+
+      - name: Push changes
+        run: git push
