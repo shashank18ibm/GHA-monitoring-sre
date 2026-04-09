@@ -36,7 +36,7 @@ jobs:
             exit 0
           fi
 
-          cutoff_yellow=$(date -u -d "30 minutes ago" +%s)
+          cutoff_yellow=$(date -u -d "1 minutes ago" +%s)
           cutoff_red=$(date -u -d "60 minutes ago" +%s)
           cutoff_severe=$(date -u -d "90 minutes ago" +%s)
 
@@ -82,7 +82,7 @@ jobs:
             elif [ "$severity" = "red" ]; then
               msg="*🚨 Red Alert: Job stuck >60 min*\nRun: $num\nCreated: $created\n$run_url"
             else
-              msg="*⚠️ Yellow Alert: Job stuck >30 min*\nRun: $num\nCreated: $created\n$run_url"
+              msg="*⚠️ Yellow Alert: Job stuck >1 min*\nRun: $num\nCreated: $created\n$run_url"
             fi
 
             payload=$(jq -n --arg text "$msg" '{text: $text}')
