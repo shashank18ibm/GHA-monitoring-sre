@@ -13,7 +13,7 @@ jobs:
   build:
     strategy:
       matrix:
-        runner: [["ubuntu-22.04-ppc64le", "ubuntu-24.04-ppc64le", "ubuntu-22.04-ppc64le-p10", "ubuntu-24.04-ppc64le-p10", "ubuntu-22.04-ppc64le-2xlarge","ubuntu-24.04-ppc64le-2xlarge", "ubuntu-22.04-ppc64le-4xlarge","ubuntu-24.04-ppc64le-4xlarge","ubuntu-22.04-ppc64le-4xlarge-p10", "ubuntu-24.04-ppc64le-4xlarge-p10"]]
+        runner: [["ubuntu-24.04-ppc64le", "ubuntu-24.04-ppc64le-p10", "ubuntu-24.04-ppc64le-2xlarge", "ubuntu-24.04-ppc64le-2xlarge-p10", "ubuntu-24.04-ppc64le-4xlarge", "ubuntu-24.04-ppc64le-4xlarge-p10"]]
       fail-fast: false
     runs-on: ${{ matrix.runner }}
     steps:
