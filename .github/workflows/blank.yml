@@ -39,7 +39,8 @@ jobs:
           "ubuntu-24.04-ppc64le-2xlarge",
           "ubuntu-24.04-ppc64le-2xlarge-p10",
           "ubuntu-24.04-ppc64le-4xlarge",
-          "ubuntu-24.04-ppc64le-4xlarge-p10"
+          "ubuntu-24.04-ppc64le-4xlarge-p10",
+          "ubuntu-24.04-s390x"
         ]
       fail-fast: false
     runs-on: ${{ matrix.runner }}
