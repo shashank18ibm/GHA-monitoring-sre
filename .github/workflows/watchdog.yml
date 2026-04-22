@@ -24,7 +24,9 @@ jobs:
 
       - name: Initialize state file if missing
         run: |
-          test -f watchdog_state.json || echo '{}' > watchdog_state.json
+          if [ ! -f watchdog_state.json ]; then
+            echo '{}' > watchdog_state.json
+          fi
 
       - name: Run watchdog monitoring
         env:
@@ -57,13 +59,12 @@ jobs:
             prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
 
             # -------------------------
-            # FAILURE DETECTED (SAFE)
+            # FAILURE DETECTED (FIXED)
             # -------------------------
             if [ "$conclusion" = "failure" ]; then
 
-              msg="🚨 FAILURE DETECTED: $wf | $url"
-              alerts="$alerts
-$msg"
+              # ✅ FIX: NO MULTILINE STRING
+              alerts="$alerts 🚨 FAILURE DETECTED: $wf | $url"
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
 
@@ -72,9 +73,8 @@ $msg"
             # -------------------------
             elif [ "$conclusion" = "success" ] && [ "$prev" = "failed" ]; then
 
-              msg="✅ RECOVERED: $wf | $url"
-              recoveries="$recoveries
-$msg"
+              # ✅ FIX: NO MULTILINE STRING
+              recoveries="$recoveries ✅ RECOVERED: $wf | $url"
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "healthy"}')
 
