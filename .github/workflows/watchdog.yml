@@ -32,11 +32,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          STATE_FILE="watchdog_state.json"
+          set -e
 
+          STATE_FILE="watchdog_state.json"
           workflows=("blank.yml" "worker-fleet-large.yml")
 
-          state=$(cat $STATE_FILE)
+          state=$(cat "$STATE_FILE")
           new_state='{}'
 
           alerts=""
@@ -60,9 +61,10 @@ jobs:
             # -------------------------
             # ❌ FAILURE DETECTED
             # -------------------------
-            if [[ "$conclusion" == "failure" || "$status" == "in_progress" && "$prev" != "failed" ]]; then
-              alerts+="🚨 FAILURE DETECTED: $wf
-Run: $url
+            if [[ "$conclusion" == "failure" || ( "$status" == "in_progress" && "$prev" != "failed" ) ]]; then
+
+              alerts="${alerts}🚨 FAILURE DETECTED: ${wf}
+Run: ${url}
 
 "
 
@@ -72,9 +74,10 @@ Run: $url
             # ✅ RECOVERY DETECTED
             # -------------------------
             elif [[ "$conclusion" == "success" && "$prev" == "failed" ]]; then
-              recoveries+="✅ RECOVERED: $wf
+
+              recoveries="${recoveries}✅ RECOVERED: ${wf}
 All tests passing again
-Run: $url
+Run: ${url}
 
 "
 
@@ -89,15 +92,19 @@ Run: $url
 
           done
 
-          echo "$new_state" > $STATE_FILE
+          echo "$new_state" > "$STATE_FILE"
 
-          echo "alerts<<EOF" >> $GITHUB_ENV
-          echo "$alerts" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          {
+            echo "alerts<<EOF"
+            echo "$alerts"
+            echo "EOF"
+          } >> $GITHUB_ENV
 
-          echo "recoveries<<EOF" >> $GITHUB_ENV
-          echo "$recoveries" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          {
+            echo "recoveries<<EOF"
+            echo "$recoveries"
+            echo "EOF"
+          } >> $GITHUB_ENV
 
       - name: Send failure alerts
         if: env.alerts != ''
