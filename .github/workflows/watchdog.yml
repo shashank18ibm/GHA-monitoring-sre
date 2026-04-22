@@ -59,28 +59,11 @@ jobs:
             prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
 
             # -------------------------
-            # SAFE LOGIC (NO SYNTAX RISK)
+            # FAILURE DETECTED (FIXED)
             # -------------------------
+            if [ "$conclusion" = "failure" ]; then
 
-            is_failure=false
-            is_running=false
-
-            if [[ "$conclusion" == "failure" ]]; then
-              is_failure=true
-            fi
-
-            if [[ "$status" == "in_progress" ]]; then
-              is_running=true
-            fi
-
-            # -------------------------
-            # FAILURE DETECTED
-            # -------------------------
-            if [[ "$is_failure" == "true" ]]; then
-
-              alerts="${alerts}🚨 FAILURE DETECTED: ${wf}
-Run: ${url}
-
+              alerts="${alerts}🚨 FAILURE DETECTED: $wf | $url
 "
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
@@ -88,12 +71,9 @@ Run: ${url}
             # -------------------------
             # RECOVERY DETECTED
             # -------------------------
-            elif [[ "$conclusion" == "success" && "$prev" == "failed" ]]; then
+            elif [ "$conclusion" = "success" ] && [ "$prev" = "failed" ]; then
 
-              recoveries="${recoveries}✅ RECOVERED: ${wf}
-All tests passing again
-Run: ${url}
-
+              recoveries="${recoveries}✅ RECOVERED: $wf | $url
 "
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "healthy"}')
@@ -102,7 +82,7 @@ Run: ${url}
             # NO CHANGE
             # -------------------------
             else
-              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): ($prev)}')
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg prev "$prev" '. + {($wf): $prev}')
             fi
 
           done
