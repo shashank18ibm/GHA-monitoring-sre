@@ -59,9 +59,24 @@ jobs:
             prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
 
             # -------------------------
-            # ❌ FAILURE DETECTED
+            # SAFE LOGIC (NO SYNTAX RISK)
             # -------------------------
-            if [[ "$conclusion" == "failure" || ( "$status" == "in_progress" && "$prev" != "failed" ) ]]; then
+
+            is_failure=false
+            is_running=false
+
+            if [[ "$conclusion" == "failure" ]]; then
+              is_failure=true
+            fi
+
+            if [[ "$status" == "in_progress" ]]; then
+              is_running=true
+            fi
+
+            # -------------------------
+            # FAILURE DETECTED
+            # -------------------------
+            if [[ "$is_failure" == "true" ]]; then
 
               alerts="${alerts}🚨 FAILURE DETECTED: ${wf}
 Run: ${url}
@@ -71,7 +86,7 @@ Run: ${url}
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
 
             # -------------------------
-            # ✅ RECOVERY DETECTED
+            # RECOVERY DETECTED
             # -------------------------
             elif [[ "$conclusion" == "success" && "$prev" == "failed" ]]; then
 
@@ -124,7 +139,6 @@ Run: ${url}
         run: |
           git config user.name "watchdog-bot"
           git config user.email "watchdog@bot.local"
-
           git add watchdog_state.json || true
           git commit -m "update watchdog state" || true
           git push || true
