@@ -1,4 +1,4 @@
-name: Watchdog - Monitor gha-prod-workflow Status
+name: Watchdog - Multi Workflow Health Monitor
 
 on:
   schedule:
@@ -7,10 +7,10 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
-  monitor-blank:
+  monitor:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,78 +19,105 @@ jobs:
           sudo apt update
           sudo apt install -y gh jq
 
-      - name: Check queued runs of blank.yml
-        id: check
+      - name: Checkout repo (for state persistence)
+        uses: actions/checkout@v4
+
+      - name: Initialize state file if missing
+        run: |
+          if [ ! -f watchdog_state.json ]; then
+            echo '{}' > watchdog_state.json
+          fi
+
+      - name: Run watchdog monitoring
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Checking queued runs..."
+          STATE_FILE="watchdog_state.json"
 
-          runs=$(gh api repos/${{ github.repository }}/actions/workflows/blank.yml/runs \
-            --jq '.workflow_runs[] | select(.status=="queued")')
+          workflows=("blank.yml" "worker-fleet-large.yml")
 
-          echo "stale_found=false" >> $GITHUB_ENV
+          state=$(cat $STATE_FILE)
+          new_state='{}'
 
-          if [ -z "$runs" ]; then
-            echo "No queued runs found."
-            exit 0
-          fi
+          alerts=""
+          recoveries=""
 
-          cutoff_yellow=$(date -u -d "30 minutes ago" +%s)
-          cutoff_red=$(date -u -d "60 minutes ago" +%s)
-          cutoff_severe=$(date -u -d "90 minutes ago" +%s)
+          for wf in "${workflows[@]}"; do
 
-          echo "$runs" | jq -c '.' > runs.txt
-          > stale_runs.txt
+            echo "Checking workflow: $wf"
 
-          while read -r run; do
-            id=$(echo "$run" | jq -r '.id')
-            num=$(echo "$run" | jq -r '.run_number')
-            created=$(echo "$run" | jq -r '.created_at')
-            created_ts=$(date -d "$created" +%s)
+            latest=$(gh api repos/${{ github.repository }}/actions/workflows/$wf/runs \
+              --jq '.workflow_runs[0]')
 
-            if [ "$created_ts" -lt "$cutoff_severe" ]; then
-              severity="severe"
-            elif [ "$created_ts" -lt "$cutoff_red" ]; then
-              severity="red"
-            elif [ "$created_ts" -lt "$cutoff_yellow" ]; then
-              severity="yellow"
+            id=$(echo "$latest" | jq -r '.id')
+            status=$(echo "$latest" | jq -r '.status')
+            conclusion=$(echo "$latest" | jq -r '.conclusion')
+
+            url="https://github.com/${{ github.repository }}/actions/runs/$id"
+
+            prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
+
+            # -------------------------
+            # ❌ FAILURE DETECTED
+            # -------------------------
+            if [[ "$conclusion" == "failure" || "$status" == "in_progress" && "$prev" != "failed" ]]; then
+              alerts+="🚨 FAILURE DETECTED: $wf
+Run: $url
+
+"
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
+
+            # -------------------------
+            # ✅ RECOVERY DETECTED
+            # -------------------------
+            elif [[ "$conclusion" == "success" && "$prev" == "failed" ]]; then
+              recoveries+="✅ RECOVERED: $wf
+All tests passing again
+Run: $url
+
+"
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "healthy"}')
+
+            # -------------------------
+            # NO CHANGE
+            # -------------------------
             else
-              continue
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): ($prev)}')
             fi
 
-            echo "$id,$num,$created,$severity" >> stale_runs.txt
+          done
 
-          done < runs.txt
+          echo "$new_state" > $STATE_FILE
 
-          if [ -s stale_runs.txt ]; then
-            echo "stale_found=true" >> $GITHUB_ENV
-          fi
+          echo "alerts<<EOF" >> $GITHUB_ENV
+          echo "$alerts" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-      - name: Send Slack Alert if stale jobs found
-        if: env.stale_found == 'true'
+          echo "recoveries<<EOF" >> $GITHUB_ENV
+          echo "$recoveries" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Send failure alerts
+        if: env.alerts != ''
         run: |
-          WEBHOOK="${{ secrets.SLACK_WEBHOOK_URL }}"
-          
-          while IFS=',' read -r id num created severity; do
-            [ -z "$id" ] && continue
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$alerts\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
 
-            run_url="https://github.com/${{ github.repository }}/actions/runs/$id"
+      - name: Send recovery alerts
+        if: env.recoveries != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"$recoveries\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
 
-            if [ "$severity" = "severe" ]; then
-              msg="🔥 Severe Alert: Job stuck >90 min    \nRun: $num\nCreated: $created\n$run_url"
-            elif [ "$severity" = "red" ]; then
-              msg="🚨 Red Alert: Job stuck >60 min     \nRun: $num\nCreated: $created\n$run_url"
-            else
-              msg="⚠️ Yellow Alert: Job stuck >30 min    \nRun: $num\nCreated: $created\n$run_url"
-            fi
+      - name: Commit updated state
+        run: |
+          git config user.name "watchdog-bot"
+          git config user.email "watchdog@bot.local"
 
-            payload=$(jq -n --arg text "$msg" '{text: $text}')
-            
-            curl -X POST -H 'Content-type: application/json' \
-              --data "$payload" \
-              "$WEBHOOK"
-
-            sleep 1
-
-          done < stale_runs.txt
+          git add watchdog_state.json || true
+          git commit -m "update watchdog state" || true
+          git push || true
