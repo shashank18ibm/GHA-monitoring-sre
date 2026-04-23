@@ -1,4 +1,4 @@
 {
   "blank.yml": "queued",
-  "worker-fleet-large.yml": "healthy"
+  "worker-fleet-large.yml": "queued"
 }
