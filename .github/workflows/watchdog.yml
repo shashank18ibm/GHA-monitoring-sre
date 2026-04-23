@@ -50,6 +50,12 @@ jobs:
             latest=$(gh api repos/${{ github.repository }}/actions/workflows/$wf/runs \
               --jq '.workflow_runs[0]')
 
+            # safeguard if no runs exist
+            if [ "$latest" = "null" ] || [ -z "$latest" ]; then
+              echo "No runs found for $wf"
+              continue
+            fi
+
             id=$(echo "$latest" | jq -r '.id')
             status=$(echo "$latest" | jq -r '.status')
             conclusion=$(echo "$latest" | jq -r '.conclusion')
@@ -59,12 +65,20 @@ jobs:
             prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
 
             # -------------------------
-            # FAILURE DETECTED (FIXED)
+            # QUEUED DETECTED (RESTORED)
             # -------------------------
-            if [ "$conclusion" = "failure" ]; then
+            if [ "$status" = "queued" ]; then
 
-              # ✅ FIX: NO MULTILINE STRING
-              alerts="$alerts 🚨 FAILURE DETECTED: $wf | $url"
+              alerts="$alerts\n🚨 QUEUED: $wf | $url"
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "queued"}')
+
+            # -------------------------
+            # FAILURE DETECTED
+            # -------------------------
+            elif [ "$conclusion" = "failure" ]; then
+
+              alerts="$alerts\n🚨 FAILURE DETECTED: $wf | $url"
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
 
@@ -73,8 +87,7 @@ jobs:
             # -------------------------
             elif [ "$conclusion" = "success" ] && [ "$prev" = "failed" ]; then
 
-              # ✅ FIX: NO MULTILINE STRING
-              recoveries="$recoveries ✅ RECOVERED: $wf | $url"
+              recoveries="$recoveries\n✅ RECOVERED: $wf | $url"
 
               new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "healthy"}')
 
@@ -91,18 +104,20 @@ jobs:
 
           {
             echo "alerts<<EOF"
-            echo "$alerts"
+            echo -e "$alerts"
             echo "EOF"
           } >> $GITHUB_ENV
 
           {
             echo "recoveries<<EOF"
-            echo "$recoveries"
+            echo -e "$recoveries"
             echo "EOF"
           } >> $GITHUB_ENV
 
       - name: Send failure alerts
         if: env.alerts != ''
+        env:
+          alerts: ${{ env.alerts }}
         run: |
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\"$alerts\"}" \
@@ -110,6 +125,8 @@ jobs:
 
       - name: Send recovery alerts
         if: env.recoveries != ''
+        env:
+          recoveries: ${{ env.recoveries }}
         run: |
           curl -X POST -H 'Content-type: application/json' \
             --data "{\"text\":\"$recoveries\"}" \
