@@ -149,11 +149,11 @@ jobs:
           # Save new state
           echo "$new_state" > "$state_file"
   
-          - name: Commit and push state
-            run: |
-              git config user.name "watchdog-bot"
-              git config user.email "watchdog@bot.com"
+      - name: Commit and push state
+        run: |
+            git config user.name "watchdog-bot"
+            git config user.email "watchdog@bot.com"
         
-              git add watchdog_state.json
-              git commit -m "Update watchdog state" || echo "No changes to commit"
-              git push || echo "⚠️Failed to push state"  
+            git add watchdog_state.json
+            git commit -m "Update watchdog state" || echo "No changes to commit"
+            git push || echo "⚠️Failed to push state"  
