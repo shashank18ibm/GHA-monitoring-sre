@@ -118,25 +118,25 @@ jobs:
             echo -e "Alerts: $alerts"
   
             payload=$(jq -n --arg text "$alerts" '{
-              blocks: [
-              {
-                type: "header",
-                text: {
-                  type: "plain_text",
-                  text: "🚨Workflow Health Alert"
-                }
-              },
-              {
-                type: "section",
-                text: {
-                  type: "mrkdwn",
-                  text: $text
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚨Workflow Health Alert"
+                  }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                      "type": "mrkdwn",
+                      "text": $text
                 }
               }
             ]
           }')
 
-          curl -X POST -H "Content-type: application/json" \
+          curl -s POST -H "Content-type: application/json" \
             --data "$payload" \
             "$SLACK_WEBHOOK_URL"
           fi
