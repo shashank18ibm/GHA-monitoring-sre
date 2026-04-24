@@ -77,13 +77,16 @@ jobs:
           if [ "$status" = "queued" ]; then
 
             if [ "$queued_minutes" -ge 90 ]; then
-              alerts="$alerts\n🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*"
+              alerts="${alerts}
+              🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*"
 
             elif [ "$queued_minutes" -ge 60 ]; then
-              alerts="$alerts\n🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              alerts="${alerts}
+              🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*"
 
             elif [ "$queued_minutes" -ge 30 ]; then
-              alerts="$alerts\n🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              alerts="${alerts}
+              🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*"
             fi
 
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "queued_$queued_minutes" '.[$wf]=$val')
@@ -91,14 +94,16 @@ jobs:
           # FAILURE LOGIC
             elif [ "$status" = "completed" ] && [ "$conclusion" = "failure" ]; then
             if [ "$prev" != "failure" ]; then
-              alerts="$alerts\n❌ *FAILED*: Workflow *$wf* failed"
+              alerts="${alerts}
+              ❌ *FAILED*: Workflow *$wf* failed"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "failure" '.[$wf]=$val')
 
           # RECOVERY LOGIC
           elif [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
             if [[ "$prev" == failure* || "$prev" == queued* ]]; then
-              alerts="$alerts\n✅ *RECOVERED*: Workflow *$wf* is back to normal"
+              alerts="${alerts}
+              ✅ *RECOVERED*: Workflow *$wf* is back to normal"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "success" '.[$wf]=$val')
 
@@ -141,9 +146,9 @@ jobs:
   
           - name: Commit and push state
             run: |
-          git config user.name "watchdog-bot"
-          git config user.email "watchdog@bot.com"
-  
-          git add watchdog_state.json
-          git commit -m "Update watchdog state" || echo "No changes to commit"
-          git push || echo "⚠️ Failed to push state"  
+              git config user.name "watchdog-bot"
+              git config user.email "watchdog@bot.com"
+      
+              git add watchdog_state.json
+              git commit -m "Update watchdog state" || echo "No changes to commit"
+              git push || echo "⚠️ Failed to push state"  
