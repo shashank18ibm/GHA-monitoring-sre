@@ -80,12 +80,12 @@ jobs:
             if [ "$queued_minutes" -ge 90 ]; then
               alerts="${alerts}
               🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*
-              🔗 <$html_url|View Run>"
+              🔗 View Run: ${html_url}"
 
             elif [ "$queued_minutes" -ge 60 ]; then
               alerts="${alerts}
               🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*
-              🔗 <$html_url|View Run>"
+              🔗 View Run: ${html_url}"
 
             elif [ "$queued_minutes" -ge 30 ]; then
               alerts="${alerts}
@@ -108,7 +108,7 @@ jobs:
             if [[ "$prev" == failure* || "$prev" == queued* ]]; then
               alerts="${alerts}
               ✅ *RECOVERED*: Workflow *$wf* is back to normal
-              🔗 <$html_url|View Run>"
+              🔗 View Run: ${html_url}"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "success" '.[$wf]=$val')
 
