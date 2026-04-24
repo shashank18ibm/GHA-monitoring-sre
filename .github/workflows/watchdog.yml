@@ -90,7 +90,7 @@ jobs:
             elif [ "$queued_minutes" -ge 30 ]; then
               alerts="${alerts}
               🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*
-              🔗 <$html_url|View Run>"
+              🔗 View Run: ${html_url}"
             fi
 
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "queued_$queued_minutes" '.[$wf]=$val')
