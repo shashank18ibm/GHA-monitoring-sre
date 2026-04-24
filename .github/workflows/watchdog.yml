@@ -62,6 +62,7 @@ jobs:
             status=$(echo "$latest" | jq -r '.status // "unknown"')
             conclusion=$(echo "$latest" | jq -r '.conclusion // "unknown"')
             created=$(echo "$latest" | jq -r '.created_at')
+            html_url=$(echo "$latest" | jq -r '.html_url')
   
             prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "none"')
   
@@ -78,15 +79,18 @@ jobs:
 
             if [ "$queued_minutes" -ge 90 ]; then
               alerts="${alerts}
-              🚨*SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*"
+              🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*
+              🔗 <$html_url|View Run>"
 
             elif [ "$queued_minutes" -ge 60 ]; then
               alerts="${alerts}
-              🔴*HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*
+              🔗 <$html_url|View Run>"
 
             elif [ "$queued_minutes" -ge 30 ]; then
               alerts="${alerts}
-              🟡*WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*
+              🔗 <$html_url|View Run>"
             fi
 
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "queued_$queued_minutes" '.[$wf]=$val')
@@ -103,7 +107,8 @@ jobs:
           elif [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
             if [[ "$prev" == failure* || "$prev" == queued* ]]; then
               alerts="${alerts}
-              ✅*RECOVERED*: Workflow *$wf* is back to normal"
+              ✅ *RECOVERED*: Workflow *$wf* is back to normal
+              🔗 <$html_url|View Run>"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "success" '.[$wf]=$val')
 
