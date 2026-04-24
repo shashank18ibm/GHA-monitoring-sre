@@ -15,7 +15,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash -e
+        shell: bash
 
     steps:
       - name: Install dependencies
@@ -27,51 +27,51 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Monitor workflows
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      run: |
-        set -e
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -e
 
-        owner_repo="${{ github.repository }}"
-        workflows=("Default-Runners-Fleet.yml" "Large-Workers-Fleet.yml")
-
-        state_file="watchdog_state.json"
-
-           
-        if [ -f "$state_file" ]; then
-          state=$(cat "$state_file")
-        else
-          state='{}'
-        fi
-
-        new_state='{}'
-        alerts=""
-
-        for wf in "${workflows[@]}"; do
-          echo "Checking workflow: $wf"
-
-          runs=$(gh api repos/$owner_repo/actions/workflows/$wf/runs --jq '.workflow_runs')
-          latest=$(echo "$runs" | jq '.[0]')
-
-          if [ "$latest" = "null" ]; then
-            echo "No runs found for $wf"
-            continue
+          owner_repo="${{ github.repository }}"
+          workflows=("Default-Runners-Fleet.yml" "Large-Workers-Fleet.yml")
+  
+          state_file="watchdog_state.json"
+  
+             
+          if [ -f "$state_file" ]; then
+            state=$(cat "$state_file")
+          else
+            state='{}'
           fi
-
-          status=$(echo "$latest" | jq -r '.status // "unknown"')
-          conclusion=$(echo "$latest" | jq -r '.conclusion // "unknown"')
-          created=$(echo "$latest" | jq -r '.created_at')
-
-          prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "none"')
-
-          echo "Status: $status | Conclusion: $conclusion | Prev: $prev"
-
-          # Time calculation
-          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          created_epoch=$(date -d "$created" +%s 2>/dev/null || echo 0)
-          now_epoch=$(date -d "$now" +%s 2>/dev/null || echo 0)
-          queued_minutes=$(( (now_epoch - created_epoch) / 60 ))
+  
+          new_state='{}'
+          alerts=""
+  
+          for wf in "${workflows[@]}"; do
+            echo "Checking workflow: $wf"
+  
+            runs=$(gh api repos/$owner_repo/actions/workflows/$wf/runs --jq '.workflow_runs')
+            latest=$(echo "$runs" | jq '.[0]')
+  
+            if [ "$latest" = "null" ]; then
+              echo "No runs found for $wf"
+              continue
+            fi
+  
+            status=$(echo "$latest" | jq -r '.status // "unknown"')
+            conclusion=$(echo "$latest" | jq -r '.conclusion // "unknown"')
+            created=$(echo "$latest" | jq -r '.created_at')
+  
+            prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "none"')
+  
+            echo "Status: $status | Conclusion: $conclusion | Prev: $prev"
+  
+            # Time calculation
+            now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            created_epoch=$(date -d "$created" +%s 2>/dev/null || echo 0)
+            now_epoch=$(date -d "$now" +%s 2>/dev/null || echo 0)
+            queued_minutes=$(( (now_epoch - created_epoch) / 60 ))
 
           # QUEUED LOGIC WITH SEVERITY
           if [ "$status" = "queued" ]; then
@@ -106,14 +106,14 @@ jobs:
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "$status" '.[$wf]=$val')
           fi
 
-        done
+          done
 
-        # Send Slack alert if needed
-        if [ -n "$alerts" ]; then
-          echo -e "Alerts: $alerts"
-
-          payload=$(jq -n --arg text "$alerts" '{
-            blocks: [
+          # Send Slack alert if needed
+          if [ -n "$alerts" ]; then
+            echo -e "Alerts: $alerts"
+  
+            payload=$(jq -n --arg text "$alerts" '{
+              blocks: [
               {
                 type: "header",
                 text: {
@@ -134,16 +134,16 @@ jobs:
           curl -X POST -H "Content-type: application/json" \
             --data "$payload" \
             "$SLACK_WEBHOOK_URL"
-        fi
+          fi
 
-        # Save new state
-        echo "$new_state" > "$state_file"
-
-        - name: Commit and push state
-          run: |
-        git config user.name "watchdog-bot"
-        git config user.email "watchdog@bot.com"
-
-        git add watchdog_state.json
-        git commit -m "Update watchdog state" || echo "No changes to commit"
-        git push || echo "⚠️ Failed to push state"  
+          # Save new state
+          echo "$new_state" > "$state_file"
+  
+          - name: Commit and push state
+            run: |
+          git config user.name "watchdog-bot"
+          git config user.email "watchdog@bot.com"
+  
+          git add watchdog_state.json
+          git commit -m "Update watchdog state" || echo "No changes to commit"
+          git push || echo "⚠️ Failed to push state"  
