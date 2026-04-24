@@ -78,15 +78,15 @@ jobs:
 
             if [ "$queued_minutes" -ge 90 ]; then
               alerts="${alerts}
-              🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*"
+              🚨*SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*"
 
             elif [ "$queued_minutes" -ge 60 ]; then
               alerts="${alerts}
-              🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              🔴*HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*"
 
             elif [ "$queued_minutes" -ge 30 ]; then
               alerts="${alerts}
-              🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*"
+              🟡*WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*"
             fi
 
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "queued_$queued_minutes" '.[$wf]=$val')
@@ -95,7 +95,7 @@ jobs:
             elif [ "$status" = "completed" ] && [ "$conclusion" = "failure" ]; then
             if [ "$prev" != "failure" ]; then
               alerts="${alerts}
-              ❌ *FAILED*: Workflow *$wf* failed"
+              ❌*FAILED*: Workflow *$wf* failed"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "failure" '.[$wf]=$val')
 
@@ -103,7 +103,7 @@ jobs:
           elif [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
             if [[ "$prev" == failure* || "$prev" == queued* ]]; then
               alerts="${alerts}
-              ✅ *RECOVERED*: Workflow *$wf* is back to normal"
+              ✅*RECOVERED*: Workflow *$wf* is back to normal"
             fi
             new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "success" '.[$wf]=$val')
 
@@ -123,7 +123,7 @@ jobs:
                 type: "header",
                 text: {
                   type: "plain_text",
-                  text: "🚨 Workflow Health Alert"
+                  text: "🚨Workflow Health Alert"
                 }
               },
               {
@@ -151,4 +151,4 @@ jobs:
       
               git add watchdog_state.json
               git commit -m "Update watchdog state" || echo "No changes to commit"
-              git push || echo "⚠️ Failed to push state"  
+              git push || echo "⚠️Failed to push state"  
