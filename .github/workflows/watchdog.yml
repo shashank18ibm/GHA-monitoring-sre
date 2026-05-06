@@ -34,7 +34,7 @@ jobs:
         run: |
           set -e
 
-          STATE_FILE="watchdog_state.json"
+          STATE_FILE="/tmp/watchdog_state.json"
           workflows=("Default-Runners-Fleet.yml" "Large-Workers-Fleet.yml")
 
           state=$(cat "$STATE_FILE")
@@ -132,10 +132,3 @@ jobs:
             --data "{\"text\":\"✅ *Recovery Alert*\n$recoveries\"}" \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Commit updated state
-        run: |
-          git config user.name "watchdog-bot"
-          git config user.email "watchdog@bot.local"
-          git add watchdog_state.json || true
-          git commit -m "update watchdog state" || true
-          git push || true
