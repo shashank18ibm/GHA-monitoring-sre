@@ -2,7 +2,7 @@ name: Watchdog - Multi Workflow Health Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # Runs every 5 minutes
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -13,10 +13,6 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        shell: bash
-
     steps:
       - name: Install dependencies
         run: |
@@ -26,125 +22,120 @@ jobs:
       - name: Checkout repo (for state persistence)
         uses: actions/checkout@v4
 
-      - name: Monitor workflows
+      - name: Initialize state file if missing
+        run: |
+          if [ ! -f watchdog_state.json ]; then
+            echo '{}' > watchdog_state.json
+          fi
+
+      - name: Run watchdog monitoring
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
-          owner_repo="${{ github.repository }}"
+          STATE_FILE="watchdog_state.json"
           workflows=("Default-Runners-Fleet.yml" "Large-Workers-Fleet.yml")
-  
-          state_file="watchdog_state.json"
-  
-             
-          if [ -f "$state_file" ]; then
-            state=$(cat "$state_file")
-          else
-            state='{}'
-          fi
-  
-          new_state='{}'
+
+          state=$(cat "$STATE_FILE")
+
+          # 🔥 FIX: preserve previous state
+          new_state="$state"
+
           alerts=""
-  
+          recoveries=""
+
           for wf in "${workflows[@]}"; do
             echo "Checking workflow: $wf"
-  
-            runs=$(gh api repos/$owner_repo/actions/workflows/$wf/runs --jq '.workflow_runs')
-            latest=$(echo "$runs" | jq '.[0]')
-  
-            if [ "$latest" = "null" ]; then
+
+            latest=$(gh api repos/${{ github.repository }}/actions/workflows/$wf/runs \
+              --jq '.workflow_runs[0]')
+
+            if [ "$latest" = "null" ] || [ -z "$latest" ]; then
               echo "No runs found for $wf"
               continue
             fi
-  
-            status=$(echo "$latest" | jq -r '.status // "unknown"')
-            conclusion=$(echo "$latest" | jq -r '.conclusion // "unknown"')
-            created=$(echo "$latest" | jq -r '.created_at')
-            html_url=$(echo "$latest" | jq -r '.html_url')
-  
-            prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "none"')
-  
-            echo "Status: $status | Conclusion: $conclusion | Prev: $prev"
-  
-            # Time calculation
-            now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            created_epoch=$(date -d "$created" +%s 2>/dev/null || echo 0)
-            now_epoch=$(date -d "$now" +%s 2>/dev/null || echo 0)
-            queued_minutes=$(( (now_epoch - created_epoch) / 60 ))
 
-          # QUEUED LOGIC WITH SEVERITY
-          if [ "$status" = "queued" ]; then
+            id=$(echo "$latest" | jq -r '.id')
+            status=$(echo "$latest" | jq -r '.status')
+            conclusion=$(echo "$latest" | jq -r '.conclusion')
 
-            if [ "$queued_minutes" -ge 90 ]; then
-              alerts="${alerts}
-              🚨 *SEVERE*: Workflow *$wf* stuck in queue for *${queued_minutes} mins*
-              🔗 View Run: ${html_url}"
+            url="https://github.com/${{ github.repository }}/actions/runs/$id"
 
-            elif [ "$queued_minutes" -ge 60 ]; then
-              alerts="${alerts}
-              🔴 *HIGH*: Workflow *$wf* queued for *${queued_minutes} mins*
-              🔗 View Run: ${html_url}"
+            prev=$(echo "$state" | jq -r --arg wf "$wf" '.[$wf] // "healthy"')
 
-            elif [ "$queued_minutes" -ge 30 ]; then
-              alerts="${alerts}
-              🟡 *WARNING*: Workflow *$wf* queued for *${queued_minutes} mins*
-              🔗 View Run: ${html_url}"
+            echo "Previous state: $prev"
+            echo "Current status: $status"
+
+            # -------------------------
+            # 🚨 QUEUE DETECTED
+            # -------------------------
+            if [ "$status" = "queued" ]; then
+              if [ "$prev" != "queued" ]; then
+                alerts="$alerts\n🚨 QUEUED: $wf | $url"
+              fi
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "queued"}')
+
+            # -------------------------
+            # ✅ RECOVERY DETECTED
+            # -------------------------
+            elif [ "$status" != "queued" ] && [ "$prev" = "queued" ]; then
+              recoveries="$recoveries\n✅ RECOVERED: $wf is back to normal | $url"
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "healthy"}')
+
+            # -------------------------
+            # ❌ FAILURE DETECTED (optional)
+            # -------------------------
+            elif [ "$conclusion" = "failure" ]; then
+              if [ "$prev" != "failed" ]; then
+                alerts="$alerts\n🚨 FAILURE: $wf | $url"
+              fi
+
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" '. + {($wf): "failed"}')
+
+            # -------------------------
+            # NO CHANGE
+            # -------------------------
+            else
+              new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg prev "$prev" '. + {($wf): $prev}')
             fi
-
-            new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "queued_$queued_minutes" '.[$wf]=$val')
-
-          # FAILURE LOGIC
-            elif [ "$status" = "completed" ] && [ "$conclusion" = "failure" ]; then
-            if [ "$prev" != "failure" ]; then
-              alerts="${alerts}
-              ❌*FAILED*: Workflow *$wf* failed"
-            fi
-            new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "failure" '.[$wf]=$val')
-
-          # RECOVERY LOGIC
-          elif [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
-            if [[ "$prev" == failure* || "$prev" == queued* ]]; then
-              alerts="${alerts}
-              ✅ *RECOVERED*: Workflow *$wf* is back to normal
-              🔗 View Run: ${html_url}"
-            fi
-            new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "success" '.[$wf]=$val')
-
-          else
-            new_state=$(echo "$new_state" | jq --arg wf "$wf" --arg val "$status" '.[$wf]=$val')
-          fi
 
           done
 
-          # Send Slack alert if needed
-          if [ -n "$alerts" ]; then
-            echo -e "Alerts: $alerts"
-  
-            payload=$(jq -n --arg text "$alerts" '{
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "🚨Workflow Health Alert"
-                  }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                      "type": "mrkdwn",
-                      "text": $text
-                }
-              }
-            ]
-          }')
+          echo "$new_state" > "$STATE_FILE"
 
-          curl -s POST -H "Content-type: application/json" \
-            --data "$payload" \
-            "$SLACK_WEBHOOK_URL"
-          fi
+          {
+            echo "alerts<<EOF"
+            echo -e "$alerts"
+            echo "EOF"
+          } >> $GITHUB_ENV
 
-          # Save new state
-          echo "$new_state" > "$state_file" 
+          {
+            echo "recoveries<<EOF"
+            echo -e "$recoveries"
+            echo "EOF"
+          } >> $GITHUB_ENV
+
+      - name: Send queue/failure alerts
+        if: env.alerts != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"🚨 *Workflow Alert*\n$alerts\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send recovery alerts
+        if: env.recoveries != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"✅ *Recovery Alert*\n$recoveries\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Commit updated state
+        run: |
+          git config user.name "watchdog-bot"
+          git config user.email "watchdog@bot.local"
+          git add watchdog_state.json || true
+          git commit -m "update watchdog state" || true
+          git push || true
