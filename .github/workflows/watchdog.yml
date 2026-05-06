@@ -19,13 +19,12 @@ jobs:
           sudo apt update
           sudo apt install -y gh jq
 
-      - name: Checkout repo (for state persistence)
-        uses: actions/checkout@v4
-
       - name: Initialize state file if missing
         run: |
-          if [ ! -f watchdog_state.json ]; then
-            echo '{}' > watchdog_state.json
+
+          STATE_FILE="/tmp/watchdog_state.json"
+          if [ ! -f "$STATE_FILE" ]; then
+            echo '{}' > "$STATE_FILE"
           fi
 
       - name: Run watchdog monitoring
