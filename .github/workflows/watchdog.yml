@@ -2,7 +2,7 @@ name: Watchdog - Multi Workflow Health Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *" # Runs every 5 minutes
   workflow_dispatch:
 
 permissions:
