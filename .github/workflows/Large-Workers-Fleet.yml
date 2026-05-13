@@ -12,8 +12,6 @@ jobs:
         runner: [
           "ubuntu-24.04-ppc64le-2xlarge",
           "ubuntu-24.04-ppc64le-2xlarge-p10",
-          "ubuntu-24.04-ppc64le-4xlarge",
-          "ubuntu-24.04-ppc64le-4xlarge-p10"
         ]
       fail-fast: false
 
